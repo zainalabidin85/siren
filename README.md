@@ -61,3 +61,14 @@ https://<raspberry_pi_ip>:5000
 - Switch modes: Flood, Earthquake, Custom
 - Upload custom WAV
 - Record & broadcast annoucements (browser mic required)
+
+How to enable HTTPS on Flask:
+1. Create a self-signed certificate on the Pi
+```
+cd /home/rpi4/warningSystem
+openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=raspberrypi"
+```
+2. Run Flask with SSL
+```
+app.run(host="0.0.0.0", port=5000, threaded=True, ssl_context=("cert.pem", "key.pem"))
+```
