@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Disaster Siren</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 18px; }
+    .row { display:flex; gap:10px; flex-wrap: wrap; margin: 12px 0; }
+    button { padding:10px 14px; font-size:16px; }
+    .pill { padding:6px 10px; border:1px solid #ccc; border-radius:20px; }
+    .card { border:1px solid #ddd; border-radius:12px; padding:14px; margin-top:12px; max-width:760px; }
+    .muted { color:#666; font-size:14px; }
+    .ok { color:#0a0; } .warn { color:#a60; }
+    .wide { width: 100%; }
+  </style>
+</head>
+<body>
+  <h2 style="text-align:center">Disaster Warning Siren System FTKA UniMAP</h2>
+  <div class="row">
+    <button onclick="api('/api/start')">▶ Start</button>
+    <button onclick="api('/api/stop')">■ Stop</button>
+    <button onclick="api('/api/next_mode')">↻ Next Mode</button>
+    <span id="status" class="pill">Loading…</span>
+  </div>
+
+  <div class="card">
+    <h3>PA / Live Announcement</h3>
+    <p class="muted">Record a short voice message and play it <b>immediately</b> once over speakers (no saving).</p>
+    <div class="row">
+      <button id="recBtn" onclick="toggleRec()">● Record</button>
+      <button id="playBtn" onclick="playLocal()" disabled>▶ Preview</button>
+      <button id="announceBtn" onclick="announceNow()" disabled>📢 Announce Now</button>
+      <select id="mimeSel">
+        <option>audio/webm</option>
+        <option>audio/ogg</option>
+        <option>audio/mp4</option>
+      </select>
+    </div>
+    <audio id="player" controls class="wide" style="display:none"></audio>
+    <p class="muted">Tip: Announcement will pause any running siren, play your message once, then resume the siren.</p>
+  </div>
+
+  <div class="card">
+    <h3>Custom Looping Message</h3>
+    <p class="muted">Upload a file to save as <code>custom.wav</code> (use with Next Mode → custom, then Start).</p>
+    <form id="uploadForm">
+      <input type="file" name="file" accept="audio/*" />
+      <button type="submit">Upload</button>
+    </form>
+    <p id="upMsg" class="muted"></p>
+  </div>
+
+<script>
+let mediaRecorder, chunks = [], recording = false, lastBlob = null;
+
+async function api(path) {
+  const r = await fetch(path, {method:'POST'});
+  const j = await r.json();
+  setStatus(j);
+}
+function setStatus(j) {
+  const s = document.getElementById('status');
+  s.textContent = `mode: ${j.mode} | running: ${j.running}`;
+  s.className = 'pill ' + (j.running ? 'ok' : 'warn');
+}
+async function poll() {
+  const r = await fetch('/api/status'); setStatus(await r.json());
+}
+setInterval(poll, 1500); poll();
+
+async function toggleRec() {
+  const recBtn = document.getElementById('recBtn');
+  const mimeSel = document.getElementById('mimeSel');
+  if (!recording) {
+    const mime = mimeSel.value;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    chunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+    mediaRecorder.ondataavailable = e => chunks.push(e.data);
+    mediaRecorder.onstop = () => {
+      lastBlob = new Blob(chunks, { type: mediaRecorder.mimeType });
+      const url = URL.createObjectURL(lastBlob);
+      const p = document.getElementById('player');
+      p.src = url; p.style.display='block';
+      document.getElementById('playBtn').disabled = false;
+      document.getElementById('announceBtn').disabled = false;
+    };
+    mediaRecorder.start();
+    recBtn.textContent = '■ Stop';
+    recording = true;
+  } else {
+    mediaRecorder.stop();
+    recBtn.textContent = '● Record';
+    recording = false;
+  }
+}
+
+function playLocal() {
+  document.getElementById('player').play();
+}
+
+async function announceNow() {
+  if (!lastBlob) return alert('Record something first');
+  const fd = new FormData(); fd.append('file', lastBlob, 'announce.webm');
+  const r = await fetch('/api/announce', { method:'POST', body: fd });
+  const j = await r.json();
+  if (!j.ok) alert('Announce failed: ' + j.error);
+  poll();
+}
+
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target.querySelector('input[type=file]').files[0];
+  if (!f) return;
+  const fd = new FormData(); fd.append('file', f, f.name);
+  const r = await fetch('/api/upload', { method:'POST', body: fd });
+  const j = await r.json();
+  document.getElementById('upMsg').textContent = j.ok ? 'Saved as custom.wav' : ('Error: ' + j.error);
+  poll();
+});
+</script>
+</body>
+</html>
